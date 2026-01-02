@@ -286,7 +286,8 @@ function UploadPage() {
               <option value="Third">Third</option>
               <option value="Fourth">Fourth</option>
               <option value="Goalkeeper">Goalkeeper</option>
-              <option value="SpecialTraining">SpecialTraining</option>
+              <option value="Special">Special</option>
+              <option value="Training">Training</option>
             </select>
           </>
         )}
