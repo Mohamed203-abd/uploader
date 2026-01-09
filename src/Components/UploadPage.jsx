@@ -85,12 +85,18 @@ function UploadPage() {
     if (kitType !== "NATIONAL KITS" && !league) return alert("Please select a league");
     if (!name && league !== "__new") return alert("Please select a club/country");
 
-    const seasonYear = Number(season);
-    const isClassic = seasonYear < 2015;
+    const seasonValue = season.trim(); // زي ما المستخدم كتب
 
-    if (Number.isNaN(seasonYear)) {
-    return alert("Season must be a number");
+// حاول ناخد السنة الأولى من السلسلة
+let isClassic = false;
+const match = seasonValue.match(/^(\d{4})/); // يجيب أول 4 أرقام
+if (match) {
+  const firstYear = parseInt(match[1], 10);
+  if (!isNaN(firstYear) && firstYear < 2015) {
+    isClassic = true;
   }
+} 
+
 
     setUploading(true);
 
@@ -110,7 +116,7 @@ function UploadPage() {
         await updateDoc(productDocRef, {
           title,
           description,
-          season: seasonYear,
+          season: seasonValue,
           isClassic,
           price: Number(price),
           features: features.filter(f => f.trim() !== ""),
@@ -125,7 +131,7 @@ function UploadPage() {
 
         setProducts(prev =>
           prev.map(p => p.id === editingProductId
-            ? { ...p, title, description, season: seasonYear, isClassic, 
+            ? { ...p, title, description, season: seasonValue, isClassic, 
               brand: brand === "__new" ? newBrand : brand, league: league === "__new" ? newLeague : league, 
               name: name === "__new" ? newName : name, continent: continent || "", 
               kitType, Type: Type || "", images: files.length ? imagesUrls : p.images }
@@ -139,7 +145,7 @@ function UploadPage() {
         const docRef = await addDoc(collection(db, "products"), {
           title,
           description,
-          season: seasonYear,
+          season: seasonValue,
           isClassic,
           price: Number(price),
           features: features.filter(f => f.trim() !== ""),
