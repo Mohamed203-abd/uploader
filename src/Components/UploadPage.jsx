@@ -28,9 +28,10 @@ function UploadPage() {
   const [products, setProducts] = useState([]);
   const [showOverlay, setShowOverlay] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
-    if (!["CLASSIC KITS", "NATIONAL KITS", "REGULAR KITS", "MYSTERY BOX"].includes(kitType)) {
+    if (!["REGULAR KITS", "NATIONAL KITS", "MYSTERY BOX"].includes(kitType)) {
       setType("");
     }
   }, [kitType]);
@@ -84,6 +85,13 @@ function UploadPage() {
     if (kitType !== "NATIONAL KITS" && !league) return alert("Please select a league");
     if (!name && league !== "__new") return alert("Please select a club/country");
 
+    const seasonYear = Number(season);
+    const isClassic = seasonYear < 2015;
+
+    if (Number.isNaN(seasonYear)) {
+    return alert("Season must be a number");
+  }
+
     setUploading(true);
 
     try {
@@ -102,7 +110,8 @@ function UploadPage() {
         await updateDoc(productDocRef, {
           title,
           description,
-          season,
+          season: seasonYear,
+          isClassic,
           price: Number(price),
           features: features.filter(f => f.trim() !== ""),
           brand: brand === "__new" ? newBrand : brand,
@@ -116,7 +125,10 @@ function UploadPage() {
 
         setProducts(prev =>
           prev.map(p => p.id === editingProductId
-            ? { ...p, title, description, season, brand: brand === "__new" ? newBrand : brand, league: league === "__new" ? newLeague : league, name: name === "__new" ? newName : name, continent: continent || "", kitType, Type: Type || "", images: files.length ? imagesUrls : p.images }
+            ? { ...p, title, description, season: seasonYear, isClassic, 
+              brand: brand === "__new" ? newBrand : brand, league: league === "__new" ? newLeague : league, 
+              name: name === "__new" ? newName : name, continent: continent || "", 
+              kitType, Type: Type || "", images: files.length ? imagesUrls : p.images }
             : p
           )
         );
@@ -127,7 +139,8 @@ function UploadPage() {
         const docRef = await addDoc(collection(db, "products"), {
           title,
           description,
-          season,
+          season: seasonYear,
+          isClassic,
           price: Number(price),
           features: features.filter(f => f.trim() !== ""),
           brand: brand === "__new" ? newBrand : brand,
@@ -181,6 +194,14 @@ function UploadPage() {
     }
   };
 
+  const filteredProducts = products.filter(p =>
+    p.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    String(p.season)?.includes(searchTerm) ||
+    p.brand?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.Type?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+
   return (
     <div className="upload-container">
       <div className="upload-card">
@@ -224,12 +245,9 @@ function UploadPage() {
         <label>Kit Type:</label>
         <select value={kitType} onChange={e => setKitType(e.target.value)}>
           <option value="">Select Kit Type</option>
-          <option value="SPECIAL KITS">SPECIAL KITS</option>
-          <option value="CLASSIC KITS">CLASSIC KITS</option>
-          <option value="MYSTERY BOX">MYSTERY BOX</option>
-          <option value="WINTER KITS">WINTER KITS</option>
           <option value="REGULAR KITS">REGULAR KITS</option>
           <option value="NATIONAL KITS">NATIONAL KITS</option>
+          <option value="MYSTERY BOX">MYSTERY BOX</option>
         </select>
 
         {kitType === "NATIONAL KITS" ? (
@@ -276,7 +294,7 @@ function UploadPage() {
         </select>
         {brand === "__new" && <input type="text" placeholder="New brand" value={newBrand} onChange={e => setNewBrand(e.target.value)} />}
 
-        {["CLASSIC KITS", "REGULAR KITS", "NATIONAL KITS", "MYSTERY BOX"].includes(kitType) && (
+        {["REGULAR KITS", "NATIONAL KITS", "MYSTERY BOX"].includes(kitType) && (
           <>
             <label>Type:</label>
             <select value={Type} onChange={e => setType(e.target.value)}>
@@ -287,6 +305,7 @@ function UploadPage() {
               <option value="Fourth">Fourth</option>
               <option value="Goalkeeper">Goalkeeper</option>
               <option value="Special">Special</option>
+              <option value="Winter">Winter</option>
               <option value="Training">Training</option>
             </select>
           </>
@@ -304,10 +323,16 @@ function UploadPage() {
       {showOverlay && (
         <div className="overlay">
           <div className="overlay-content">
-            <button className="close-btn" onClick={() => setShowOverlay(false)}>X</button>
-            <h3>All Products</h3>
+            <div className="overlay-header"> 
+              <button className="close-btn sticky-close" onClick={() => setShowOverlay(false)}>X</button>
+              <h3>All Products</h3>
+              <input type="text" placeholder="Search" value={searchTerm} 
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="overlay-search"
+              />
+              </div>
             <div className="products-grid">
-              {products.map(p => (
+              {filteredProducts.map(p => (
                 <div key={p.id} className="product-card">
                   <img src={p.images[0]} alt={p.title} />
                   <h4>{p.title}</h4>
