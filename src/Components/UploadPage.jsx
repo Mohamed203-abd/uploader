@@ -1,102 +1,200 @@
-import { useState, useEffect } from "react";
-import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { useState, useEffect, useMemo } from "react";
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from "firebase/storage";
+
+import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  deleteDoc,
+  doc,
+  updateDoc,
+} from "firebase/firestore";
+
 import { storage, db, auth } from "../firebase";
-import { collection, addDoc, getDocs, serverTimestamp, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { useProducts } from "../Hooks/UseProducts";
+import { useQueryClient } from "@tanstack/react-query";
+
 import "../Styles/UploadPage.css";
 import "../Styles/Framework.css";
 
 function UploadPage() {
+  const queryClient = useQueryClient();
+
+  // ================= CACHE =================
+  const { data: products = [] } = useProducts();
+
+  // ================= STATES =================
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [season, setSeason] = useState("");
   const [features, setFeatures] = useState([""]);
   const [price, setPrice] = useState("");
+
   const [brand, setBrand] = useState("");
   const [league, setLeague] = useState("");
   const [name, setName] = useState("");
   const [kitType, setKitType] = useState("");
   const [Type, setType] = useState("");
   const [continent, setContinent] = useState("");
+
   const [newBrand, setNewBrand] = useState("");
   const [newLeague, setNewLeague] = useState("");
   const [newName, setNewName] = useState("");
+
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
-  const [brandsList, setBrandsList] = useState([]);
-  const [leaguesList, setLeaguesList] = useState([]);
-  const [namesList, setNamesList] = useState([]);
-  const [products, setProducts] = useState([]);
+
   const [showOverlay, setShowOverlay] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
 
+  // ================= EFFECTS =================
   useEffect(() => {
-    if (!["REGULAR KITS", "NATIONAL KITS", "MYSTERY BOX"].includes(kitType)) {
+    if (
+      !["REGULAR KITS", "NATIONAL KITS", "MYSTERY BOX"].includes(
+        kitType
+      )
+    ) {
       setType("");
     }
   }, [kitType]);
 
-  // Fetch dropdown options
-  useEffect(() => {
-    const fetchOptions = async () => {
-      const snap = await getDocs(collection(db, "products"));
-      const data = snap.docs.map(doc => doc.data());
-      setBrandsList([...new Set(data.map(d => d.brand).filter(Boolean))]);
-      setLeaguesList([...new Set(data.map(d => d.league).filter(Boolean))]);
-      setNamesList([...new Set(data.map(d => d.name).filter(Boolean))]);
-    };
-    fetchOptions();
-  }, []);
+  // ================= DROPDOWNS FROM CACHE =================
+  const brandsList = useMemo(
+    () =>
+      [...new Set(products.map((p) => p.brand).filter(Boolean))].sort(),
+    [products]
+  );
 
-  // Load products
-  useEffect(() => {
-    const load = async () => {
-      const snap = await getDocs(collection(db, "products"));
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProducts(data);
-    };
-    load();
-  }, []);
+  const leaguesList = useMemo(
+    () =>
+      [...new Set(products.map((p) => p.league).filter(Boolean))].sort(),
+    [products]
+  );
 
-  const continents = ["Europe", "South America", "North America", "Africa", "Asia", "Oceania"];
-  const countriesByContinent = continent
-    ? [...new Set(products.filter(p => p.continent === continent).map(p => p.name))]
-    : [];
-  const namesFilteredReal = league && league !== "__new"
-    ? [...new Set(products.filter(p => p.league === league).map(p => p.name).filter(Boolean))]
-    : namesList;
+  const namesList = useMemo(
+    () =>
+      [...new Set(products.map((p) => p.name).filter(Boolean))].sort(),
+    [products]
+  );
 
-  // Upload images
+  const continents = [
+    "Europe",
+    "South America",
+    "North America",
+    "Africa",
+    "Asia",
+    "Oceania",
+  ];
+
+  const countriesByContinent = useMemo(() => {
+    if (!continent) return [];
+
+    return [
+      ...new Set(
+        products
+          .filter((p) => p.continent === continent)
+          .map((p) => p.name)
+          .filter(Boolean)
+      ),
+    ];
+  }, [products, continent]);
+
+  const namesFilteredReal = useMemo(() => {
+    if (!league || league === "__new") return namesList;
+
+    return [
+      ...new Set(
+        products
+          .filter((p) => p.league === league)
+          .map((p) => p.name)
+          .filter(Boolean)
+      ),
+    ];
+  }, [products, league, namesList]);
+
+  // ================= SEARCH =================
+  const filteredProducts = useMemo(() => {
+    const q = searchTerm.toLowerCase();
+
+    return products.filter(
+      (p) =>
+        p.title?.toLowerCase().includes(q) ||
+        p.brand?.toLowerCase().includes(q) ||
+        p.Type?.toLowerCase().includes(q) ||
+        String(p.season).includes(q)
+    );
+  }, [products, searchTerm]);
+
+  // ================= HELPERS =================
+  const resetForm = () => {
+    setTitle("");
+    setDescription("");
+    setSeason("");
+    setFeatures([""]);
+    setPrice("");
+
+    setBrand("");
+    setLeague("");
+    setName("");
+    setKitType("");
+    setType("");
+    setContinent("");
+
+    setNewBrand("");
+    setNewLeague("");
+    setNewName("");
+
+    setFiles([]);
+    setEditingProductId(null);
+  };
+
   const uploadImages = async () => {
     const urls = [];
-    for (let file of files) {
-      const fileRef = ref(storage, `products/${file.name}_${Date.now()}`);
+
+    for (const file of files) {
+      const fileRef = ref(
+        storage,
+        `products/${Date.now()}_${file.name}`
+      );
+
       await uploadBytes(fileRef, file);
-      const downloadURL = await getDownloadURL(fileRef);
-      urls.push(downloadURL);
+
+      const url = await getDownloadURL(fileRef);
+
+      urls.push(url);
     }
+
     return urls;
   };
 
+  const detectClassic = (seasonValue) => {
+    const match = seasonValue.match(/^(\d{4})/);
+
+    if (!match) return false;
+
+    const firstYear = Number(match[1]);
+
+    return firstYear < 2015;
+  };
+
+  // ================= ADD / UPDATE =================
   const handleUpload = async () => {
     if (!auth.currentUser) return alert("Login required");
-    if (!title || !season || !brand) return alert("Fill all fields");
-    if (kitType === "NATIONAL KITS" && !name) return alert("Please select a country");
-    if (kitType !== "NATIONAL KITS" && !league) return alert("Please select a league");
-    if (!name && league !== "__new") return alert("Please select a club/country");
 
-    const seasonValue = season.trim(); // زي ما المستخدم كتب
+    if (!title || !season || !brand)
+      return alert("Fill all fields");
 
-// حاول ناخد السنة الأولى من السلسلة
-let isClassic = false;
-const match = seasonValue.match(/^(\d{4})/); // يجيب أول 4 أرقام
-if (match) {
-  const firstYear = parseInt(match[1], 10);
-  if (!isNaN(firstYear) && firstYear < 2015) {
-    isClassic = true;
-  }
-} 
+    if (kitType === "NATIONAL KITS" && !name)
+      return alert("Choose country");
 
+    if (kitType !== "NATIONAL KITS" && !league)
+      return alert("Choose league");
 
     setUploading(true);
 
@@ -107,252 +205,538 @@ if (match) {
         imagesUrls = await uploadImages();
       }
 
+      const finalBrand =
+        brand === "__new" ? newBrand : brand;
+
+      const finalLeague =
+        league === "__new" ? newLeague : league;
+
+      const finalName =
+        name === "__new" ? newName : name;
+
+      const seasonValue = season.trim();
+
+      const payload = {
+        title,
+        description,
+        season: seasonValue,
+        isClassic: detectClassic(seasonValue),
+        price: Number(price),
+        features: features.filter((f) => f.trim()),
+        brand: finalBrand,
+        league: finalLeague,
+        name: finalName,
+        continent: continent || "",
+        kitType,
+        Type: Type || "",
+      };
+
       if (editingProductId) {
-        // Update existing product
-        const existingProduct = products.find(p => p.id === editingProductId);
-        if (!existingProduct) throw new Error("Product not found");
+        const oldProduct = products.find(
+          (p) => p.id === editingProductId
+        );
 
-        const productDocRef = doc(db, "products", editingProductId);
-        await updateDoc(productDocRef, {
-          title,
-          description,
-          season: seasonValue,
-          isClassic,
-          price: Number(price),
-          features: features.filter(f => f.trim() !== ""),
-          brand: brand === "__new" ? newBrand : brand,
-          league: league === "__new" ? newLeague : league,
-          name: name === "__new" ? newName : name,
-          continent: continent || "",
-          kitType,
-          Type: Type || "",
-          images: files.length ? imagesUrls : existingProduct.images,
-        });
-
-        setProducts(prev =>
-          prev.map(p => p.id === editingProductId
-            ? { ...p, title, description, season: seasonValue, isClassic, 
-              brand: brand === "__new" ? newBrand : brand, league: league === "__new" ? newLeague : league, 
-              name: name === "__new" ? newName : name, continent: continent || "", 
-              kitType, Type: Type || "", images: files.length ? imagesUrls : p.images }
-            : p
-          )
+        await updateDoc(
+          doc(db, "products", editingProductId),
+          {
+            ...payload,
+            images:
+              imagesUrls.length > 0
+                ? imagesUrls
+                : oldProduct?.images || [],
+          }
         );
 
         alert("Updated ✔");
       } else {
-        // Add new product
-        const docRef = await addDoc(collection(db, "products"), {
-          title,
-          description,
-          season: seasonValue,
-          isClassic,
-          price: Number(price),
-          features: features.filter(f => f.trim() !== ""),
-          brand: brand === "__new" ? newBrand : brand,
-          league: league === "__new" ? newLeague : league,
-          name: name === "__new" ? newName : name,
-          continent: continent || "",
-          kitType,
-          Type: Type || "",
+        await addDoc(collection(db, "products"), {
+          ...payload,
           images: imagesUrls,
-          imagesLabels: imagesUrls.map((_, i) => ["Front", "Back", "Side", "Close-up"][i] || `View ${i+1}`),
+          imagesLabels: imagesUrls.map(
+            (_, i) =>
+              ["Front", "Back", "Side", "Close-up"][i] ||
+              `View ${i + 1}`
+          ),
           dateAdded: serverTimestamp(),
         });
 
-        setProducts(prev => [...prev, { id: docRef.id, title, description, season, brand: brand === "__new" ? newBrand : brand, league: league === "__new" ? newLeague : league, name: name === "__new" ? newName : name, continent: continent || "", kitType, Type: Type || "", images: imagesUrls }]);
         alert("Added ✔");
       }
 
-      // Reset form
-      setTitle(""); setDescription(""); setSeason(""); setPrice(""); setFeatures([""]); setBrand(""); 
-      setLeague(""); setName(""); setKitType(""); setType(""); setContinent(""); setFiles([]); 
-      setNewBrand(""); setNewLeague(""); setNewName(""); setEditingProductId(null);
+      queryClient.invalidateQueries(["products"]);
 
-    } catch (e) {
-      console.error(e);
+      resetForm();
+    } catch (error) {
+      console.error(error);
       alert("Error");
     }
 
     setUploading(false);
   };
 
-  const deleteProductByTitle = async (titleToDelete) => {
+  // ================= DELETE =================
+  const deleteProductById = async (item) => {
     if (!window.confirm("Delete this item?")) return;
 
     try {
-      const snap = await getDocs(collection(db, "products"));
-      const productDoc = snap.docs.find(doc => doc.data().title === titleToDelete);
-      if (!productDoc) return alert("Product not found");
+      await deleteDoc(doc(db, "products", item.id));
 
-      await deleteDoc(doc(db, "products", productDoc.id));
-      const productData = productDoc.data();
-      for (let url of productData.images) {
-        const imageRef = ref(storage, url);
-        await deleteObject(imageRef).catch(() => {});
+      if (item.images?.length) {
+        for (const url of item.images) {
+          await deleteObject(ref(storage, url)).catch(() => {});
+        }
       }
 
+      queryClient.invalidateQueries(["products"]);
+
       alert("Deleted ✔");
-      setProducts(prev => prev.filter(p => p.title !== titleToDelete));
-    } catch (err) {
-      console.error(err);
-      alert("Error deleting product");
+    } catch (error) {
+      console.error(error);
+      alert("Delete failed");
     }
   };
 
-  const filteredProducts = products.filter(p =>
-    p.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    String(p.season)?.includes(searchTerm) ||
-    p.brand?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.Type?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // ================= EDIT =================
+  const editItem = (p) => {
+    setTitle(p.title || "");
+    setDescription(p.description || "");
+    setSeason(p.season || "");
+    setPrice(p.price || "");
+    setFeatures(
+      p.features?.length ? p.features : [""]
+    );
 
+    setBrand(p.brand || "");
+    setLeague(p.league || "");
+    setName(p.name || "");
+    setKitType(p.kitType || "");
+    setType(p.Type || "");
+    setContinent(p.continent || "");
+
+    setFiles([]);
+    setEditingProductId(p.id);
+    setShowOverlay(false);
+  };
 
   return (
     <div className="upload-container">
       <div className="upload-card">
-        <h2>{editingProductId ? "Edit Product" : "Add Product"}</h2>
+        <h2>
+          {editingProductId
+            ? "Edit Product"
+            : "Add Product"}
+        </h2>
 
-        <input type="text" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} />
-        <input type="text" placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} />
-        <input type="text" placeholder="Season" value={season} onChange={e => setSeason(e.target.value)} />
-        <input type="number" placeholder="Price" value={price}onChange={e => setPrice(e.target.value)} />
+        <input
+          placeholder="Title"
+          value={title}
+          onChange={(e) =>
+            setTitle(e.target.value)
+          }
+        />
 
-        <label>Features:</label>
-        {features.map((feature, index) => (
-          <div key={index} style={{ display: "flex", gap: "10px", marginBottom: "5px" }}>
-          <input
-            type="text"
-            placeholder={`Feature ${index + 1}`}
-            value={feature}
-            onChange={(e) => { const updated = [...features]; updated[index] = e.target.value;
-              setFeatures(updated);
-            }}
-          />
-        {features.length > 1 && (
-          <button type="button" onClick={() => {
-              setFeatures(features.filter((_, i) => i !== index));
-            }}>
-          ✕
-          </button>
-        )}
-      </div>
-    ))}
+        <input
+          placeholder="Description"
+          value={description}
+          onChange={(e) =>
+            setDescription(e.target.value)
+          }
+        />
 
-<button
-  type="button"
-  onClick={() => setFeatures([...features, ""])}
->
-  + Add Feature
-</button>
+        <input
+          placeholder="Season"
+          value={season}
+          onChange={(e) =>
+            setSeason(e.target.value)
+          }
+        />
 
+        <input
+          type="number"
+          placeholder="Price"
+          value={price}
+          onChange={(e) =>
+            setPrice(e.target.value)
+          }
+        />
 
+        {/* FEATURES */}
+        <label>Features</label>
 
-        <label>Kit Type:</label>
-        <select value={kitType} onChange={e => setKitType(e.target.value)}>
-          <option value="">Select Kit Type</option>
-          <option value="REGULAR KITS">REGULAR KITS</option>
-          <option value="NATIONAL KITS">NATIONAL KITS</option>
-          <option value="MYSTERY BOX">MYSTERY BOX</option>
+        {features.map((item, index) => (
+          <div key={index}>
+            <input
+              value={item}
+              placeholder={`Feature ${index + 1}`}
+              onChange={(e) => {
+                const arr = [...features];
+                arr[index] = e.target.value;
+                setFeatures(arr);
+              }}
+            />
+
+            {features.length > 1 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setFeatures(
+                    features.filter(
+                      (_, i) => i !== index
+                    )
+                  )
+                }
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+
+        <button
+          type="button"
+          onClick={() =>
+            setFeatures([
+              ...features,
+              "",
+            ])
+          }
+        >
+          + Add Feature
+        </button>
+
+        {/* KIT TYPE */}
+        <label>Kit Type</label>
+
+        <select
+          value={kitType}
+          onChange={(e) =>
+            setKitType(e.target.value)
+          }
+        >
+          <option value="">
+            Select Kit Type
+          </option>
+          <option value="REGULAR KITS">
+            REGULAR KITS
+          </option>
+          <option value="NATIONAL KITS">
+            NATIONAL KITS
+          </option>
+          <option value="MYSTERY BOX">
+            MYSTERY BOX
+          </option>
         </select>
 
+        {/* NATIONAL */}
         {kitType === "NATIONAL KITS" ? (
           <>
-            <label>Continent:</label>
-            <select value={continent} onChange={e => { setContinent(e.target.value); setLeague(""); }}>
-              <option value="">Select Continent</option>
-              {continents.map(c => <option key={c} value={c}>{c}</option>)}
+            <label>Continent</label>
+
+            <select
+              value={continent}
+              onChange={(e) =>
+                setContinent(e.target.value)
+              }
+            >
+              <option value="">
+                Select Continent
+              </option>
+
+              {continents.map((c) => (
+                <option key={c}>
+                  {c}
+                </option>
+              ))}
             </select>
 
-            <label>Country:</label>
-            <select value={name} onChange={e => setName(e.target.value)}>
-              <option value="">Select Country</option>
-              {countriesByContinent.map(country => <option key={country} value={country}>{country}</option>)}
-              <option value="__new">+ Add New Country</option>
+            <label>Country</label>
+
+            <select
+              value={name}
+              onChange={(e) =>
+                setName(e.target.value)
+              }
+            >
+              <option value="">
+                Select Country
+              </option>
+
+              {countriesByContinent.map(
+                (c) => (
+                  <option key={c}>
+                    {c}
+                  </option>
+                )
+              )}
+
+              <option value="__new">
+                + Add New Country
+              </option>
             </select>
-            {name === "__new" && <input type="text" placeholder="New country" value={newName} onChange={e => setNewName(e.target.value)} />}
+
+            {name === "__new" && (
+              <input
+                placeholder="New Country"
+                value={newName}
+                onChange={(e) =>
+                  setNewName(
+                    e.target.value
+                  )
+                }
+              />
+            )}
           </>
         ) : (
           <>
-            <label>League:</label>
-            <select value={league} onChange={e => { setLeague(e.target.value); setName(""); }}>
-              <option value="">Select League</option>
-              {leaguesList.map(l => <option key={l} value={l}>{l}</option>)}
-              <option value="__new">+ Add New League</option>
-            </select>
-            {league === "__new" && <input type="text" placeholder="New league" value={newLeague} onChange={e => setNewLeague(e.target.value)} />}
+            <label>League</label>
 
-            <label>Club:</label>
-            <select value={name} onChange={e => setName(e.target.value)}>
-              <option value="">Select Club</option>
-              {namesFilteredReal.map(n => <option key={n} value={n}>{n}</option>)}
-              <option value="__new">+ Add New Club</option>
+            <select
+              value={league}
+              onChange={(e) => {
+                setLeague(
+                  e.target.value
+                );
+                setName("");
+              }}
+            >
+              <option value="">
+                Select League
+              </option>
+
+              {leaguesList.map((l) => (
+                <option key={l}>
+                  {l}
+                </option>
+              ))}
+
+              <option value="__new">
+                + Add New League
+              </option>
             </select>
-            {name === "__new" && <input type="text" placeholder="New club" value={newName} onChange={e => setNewName(e.target.value)} />}
+
+            {league === "__new" && (
+              <input
+                placeholder="New League"
+                value={newLeague}
+                onChange={(e) =>
+                  setNewLeague(
+                    e.target.value
+                  )
+                }
+              />
+            )}
+
+            <label>Club</label>
+
+            <select
+              value={name}
+              onChange={(e) =>
+                setName(e.target.value)
+              }
+            >
+              <option value="">
+                Select Club
+              </option>
+
+              {namesFilteredReal.map(
+                (n) => (
+                  <option key={n}>
+                    {n}
+                  </option>
+                )
+              )}
+
+              <option value="__new">
+                + Add New Club
+              </option>
+            </select>
+
+            {name === "__new" && (
+              <input
+                placeholder="New Club"
+                value={newName}
+                onChange={(e) =>
+                  setNewName(
+                    e.target.value
+                  )
+                }
+              />
+            )}
           </>
         )}
 
-        <label>Brand:</label>
-        <select value={brand} onChange={e => { setBrand(e.target.value); setNewBrand(""); }}>
-          <option value="">Select Brand</option>
-          {brandsList.map(b => <option key={b} value={b}>{b}</option>)}
-          <option value="__new">+ Add New Brand</option>
+        {/* BRAND */}
+        <label>Brand</label>
+
+        <select
+          value={brand}
+          onChange={(e) =>
+            setBrand(e.target.value)
+          }
+        >
+          <option value="">
+            Select Brand
+          </option>
+
+          {brandsList.map((b) => (
+            <option key={b}>
+              {b}
+            </option>
+          ))}
+
+          <option value="__new">
+            + Add New Brand
+          </option>
         </select>
-        {brand === "__new" && <input type="text" placeholder="New brand" value={newBrand} onChange={e => setNewBrand(e.target.value)} />}
 
-        {["REGULAR KITS", "NATIONAL KITS", "MYSTERY BOX"].includes(kitType) && (
+        {brand === "__new" && (
+          <input
+            placeholder="New Brand"
+            value={newBrand}
+            onChange={(e) =>
+              setNewBrand(
+                e.target.value
+              )
+            }
+          />
+        )}
+
+        {/* TYPE */}
+        {[
+          "REGULAR KITS",
+          "NATIONAL KITS",
+          "MYSTERY BOX",
+        ].includes(kitType) && (
           <>
-            <label>Type:</label>
-            <select value={Type} onChange={e => setType(e.target.value)}>
-              <option value="">Select Type</option>
-              <option value="Home">Home</option>
-              <option value="Away">Away</option>
-              <option value="Third">Third</option>
-              <option value="Fourth">Fourth</option>
-              <option value="Goalkeeper">Goalkeeper</option>
-              <option value="Special">Special</option>
-              <option value="Winter">Winter</option>
-              <option value="Training">Training</option>
+            <label>Type</label>
+
+            <select
+              value={Type}
+              onChange={(e) =>
+                setType(
+                  e.target.value
+                )
+              }
+            >
+              <option value="">
+                Select Type
+              </option>
+              <option>Home</option>
+              <option>Away</option>
+              <option>Third</option>
+              <option>Fourth</option>
+              <option>Goalkeeper</option>
+              <option>Special</option>
+              <option>Winter</option>
+              <option>Training</option>
             </select>
           </>
         )}
 
-        <input type="file" multiple accept="image/*" onChange={e => setFiles(Array.from(e.target.files))} />
+        {/* FILE */}
+        <input
+          type="file"
+          multiple
+          accept="image/*"
+          onChange={(e) =>
+            setFiles(
+              Array.from(
+                e.target.files || []
+              )
+            )
+          }
+        />
 
-        <button onClick={handleUpload} disabled={uploading}>
-          {uploading ? "Uploading..." : editingProductId ? "Update Product" : "Add Product"}
+        <button
+          disabled={uploading}
+          onClick={handleUpload}
+        >
+          {uploading
+            ? "Saving..."
+            : editingProductId
+            ? "Update Product"
+            : "Add Product"}
         </button>
 
-        <button style={{ marginTop: "10px" }} onClick={() => setShowOverlay(true)}>Show Products</button>
+        <button
+          onClick={() =>
+            setShowOverlay(true)
+          }
+        >
+          Show Products
+        </button>
       </div>
 
+      {/* OVERLAY */}
       {showOverlay && (
         <div className="overlay">
           <div className="overlay-content">
-            <div className="overlay-header"> 
-              <button className="close-btn sticky-close" onClick={() => setShowOverlay(false)}>X</button>
-              <h3>All Products</h3>
-              <input type="text" placeholder="Search" value={searchTerm} 
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="overlay-search"
-              />
-              </div>
+            <button
+              className="close-btn"
+              onClick={() =>
+                setShowOverlay(false)
+              }
+            >
+              X
+            </button>
+
+            <h3>All Products</h3>
+
+            <input
+              className="overlay-search"
+              placeholder="Search"
+              value={searchTerm}
+              onChange={(e) =>
+                setSearchTerm(
+                  e.target.value
+                )
+              }
+            />
+
             <div className="products-grid">
-              {filteredProducts.map(p => (
-                <div key={p.id} className="product-card">
-                  <img src={p.images[0]} alt={p.title} />
-                  <h4>{p.title}</h4>
-                  <p>{p.season}</p>
-                  <button onClick={() => deleteProductByTitle(p.title)}>Delete</button>
-                  <button onClick={() => {
-                    setTitle(p.title); setDescription(p.description); setSeason(p.season);
-                    setPrice(p.price); setFeatures(p.features?.length ? p.features : [""]);
-                    setBrand(p.brand); setLeague(p.league); setName(p.name);
-                    setKitType(p.kitType); setType(p.Type || ""); setContinent(p.continent || "");
-                    setFiles([]); setEditingProductId(p.id); setShowOverlay(false);
-                  }}>Edit</button>
-                </div>
-              ))}
+              {filteredProducts.map(
+                (p) => (
+                  <div
+                    key={p.id}
+                    className="product-card"
+                  >
+                    <img
+                      src={
+                        p.images?.[0]
+                      }
+                      alt={p.title}
+                    />
+
+                    <h4>
+                      {p.title}
+                    </h4>
+
+                    <p>
+                      {p.season}
+                    </p>
+
+                    <button
+                      onClick={() =>
+                        deleteProductById(
+                          p
+                        )
+                      }
+                    >
+                      Delete
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        editItem(
+                          p
+                        )
+                      }
+                    >
+                      Edit
+                    </button>
+                  </div>
+                )
+              )}
             </div>
           </div>
         </div>
